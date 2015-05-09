@@ -1,19 +1,14 @@
-"""Tests the xonsh lexer."""
+# coding=utf-8
+"""Tests the xonsh parser."""
 from __future__ import unicode_literals, print_function
 import os
 import sys
 import ast
-from collections import Sequence
-from pprint import pprint, pformat
 sys.path.insert(0, os.path.abspath('..'))  # FIXME
-import builtins
-import subprocess
 
 import nose
 from nose.tools import assert_equal
 assert_equal.__self__.maxDiff = None
-
-from ply.lex import LexToken
 
 from xonsh.parser import Parser
 
@@ -55,35 +50,35 @@ def assert_nodes_equal(x, y):
         return True
     assert_equal(ast.dump(x), ast.dump(y))
 
-def check_ast(input, run=True, mode='eval'):
+def check_ast(inp, run=True, mode='eval'):
     # expect a Python AST
-    exp = ast.parse(input, mode=mode)
+    exp = ast.parse(inp, mode=mode)
     # observe something from xonsh
-    obs = PARSER.parse(input, debug_level=DEBUG_LEVEL)
+    obs = PARSER.parse(inp, debug_level=DEBUG_LEVEL)
     # Check that they are equal
     assert_nodes_equal(exp, obs)
     # round trip by running xonsh AST via Python
     if run:
         exec(compile(obs, '<test-ast>', mode))
 
-def check_stmts(input, run=True, mode='exec'):
-    if not input.endswith('\n'):
-        input += '\n'
-    check_ast(input, run=run, mode=mode)
+def check_stmts(inp, run=True, mode='exec'):
+    if not inp.endswith('\n'):
+        inp += '\n'
+    check_ast(inp, run=run, mode=mode)
 
-def check_xonsh_ast(xenv, input, run=True, mode='eval'):
+def check_xonsh_ast(xenv, inp, run=True, mode='eval'):
     with mock_xonsh_env(xenv):
-        obs = PARSER.parse(input, debug_level=DEBUG_LEVEL)
+        obs = PARSER.parse(inp, debug_level=DEBUG_LEVEL)
         if obs is None:
             return  # comment only
         bytecode = compile(obs, '<test-xonsh-ast>', mode)
         if run:
             exec(bytecode)
     
-def check_xonsh(xenv, input, run=True, mode='exec'):
-    if not input.endswith('\n'):
-        input += '\n'
-    check_xonsh_ast(xenv, input, run=run, mode=mode)
+def check_xonsh(xenv, inp, run=True, mode='exec'):
+    if not inp.endswith('\n'):
+        inp += '\n'
+    check_xonsh_ast(xenv, inp, run=run, mode=mode)
 
 #
 # Tests
@@ -98,6 +93,15 @@ def test_int_literal():
 
 def test_float_literal():
     yield check_ast, '42.0'
+
+def test_imag_literal():
+    yield check_ast, '42j'
+
+def test_float_imag_literal():
+    yield check_ast, '42.0j'
+
+def test_complex():
+    yield check_ast, '42+84j'
 
 def test_str_literal():
     yield check_ast, '"hello"'
@@ -195,17 +199,11 @@ def test_group():
 def test_lt():
     yield check_ast, '42 < 65'
 
-def test_lt():
-    yield check_ast, '42 < 65'
-
 def test_gt():
     yield check_ast, '42 > 65'
 
 def test_eq():
     yield check_ast, '42 == 65'
-
-def test_lt():
-    yield check_ast, '42 < 65'
 
 def test_le():
     yield check_ast, '42 <= 65'
@@ -264,7 +262,7 @@ def test_group_and_or():
 def test_if_else_expr():
     yield check_ast, '42 if True else 65'
 
-def test_if_else_expr():
+def test_if_else_expr_expr():
     yield check_ast, '42+5 if 1 == 2 else 65-5'
 
 def test_str_idx():
@@ -309,8 +307,47 @@ def test_list_two():
 def test_list_three():
     yield check_ast, '[1, 42, 65]'
 
-def test_list_three():
+def test_list_three_comma():
     yield check_ast, '[1, 42, 65,]'
+
+def test_list_one_nested():
+    yield check_ast, '[[1]]'
+
+def test_list_list_four_nested():
+    yield check_ast, '[[1], [2], [3], [4]]'
+
+def test_list_tuple_three_nested():
+    yield check_ast, '[(1,), (2,), (3,)]'
+
+def test_list_set_tuple_three_nested():
+    yield check_ast, '[{(1,)}, {(2,)}, {(3,)}]'
+
+def test_list_tuple_one_nested():
+    yield check_ast, '[(1,)]'
+
+def test_tuple_tuple_one_nested():
+    yield check_ast, '((1,),)'
+
+def test_dict_list_one_nested():
+    yield check_ast, '{1: [2]}'
+
+def test_dict_list_one_nested_comma():
+    yield check_ast, '{1: [2],}'
+
+def test_dict_tuple_one_nested():
+    yield check_ast, '{1: (2,)}'
+
+def test_dict_tuple_one_nested_comma():
+    yield check_ast, '{1: (2,),}'
+
+def test_dict_list_two_nested():
+    yield check_ast, '{1: [2], 3: [4]}'
+
+def test_set_tuple_one_nested():
+    yield check_ast, '{(1,)}'
+
+def test_set_tuple_two_nested():
+    yield check_ast, '{(1,), (2,)}'
 
 def test_tuple_empty():
     yield check_ast, '()'
@@ -336,7 +373,7 @@ def test_tuple_two():
 def test_tuple_three():
     yield check_ast, '(1, 42, 65)'
 
-def test_tuple_three():
+def test_tuple_three_comma():
     yield check_ast, '(1, 42, 65,)'
 
 def test_set_one():
@@ -444,20 +481,26 @@ def test_setcomp_if_setcomp_if():
 def test_dictcomp():
     yield check_ast, '{x: x for x in "mom"}'
 
+def test_dictcomp_unpack_parens():
+    yield check_ast, '{k: v for (k, v) in {"x": 42}.items()}'
+
+def test_dictcomp_unpack_no_parens():
+    yield check_ast, '{k: v for k, v in {"x": 42}.items()}'
+
 def test_dictcomp_if():
-    yield check_ast, '{x:x for x in "mom" if True}'
+    yield check_ast, '{x: x for x in "mom" if True}'
 
 def test_dictcomp_if_and():
-    yield check_ast, '{x:x for x in "mom" if True and x == "m"}'
+    yield check_ast, '{x: x for x in "mom" if True and x == "m"}'
 
 def test_dbl_dictcomp():
-    yield check_ast, '{x:y for x in "mom" for y in "dad"}'
+    yield check_ast, '{x: y for x in "mom" for y in "dad"}'
 
 def test_dictcomp_if_dictcomp():
-    yield check_ast, '{x:y for x in "mom" if True for y in "dad"}'
+    yield check_ast, '{x: y for x in "mom" if True for y in "dad"}'
 
 def test_dictcomp_if_dictcomp_if():
-    yield check_ast, '{x:y for x in "mom" if True for y in "dad" if y == "d"}'
+    yield check_ast, '{x: y for x in "mom" if True for y in "dad" if y == "d"}'
 
 def test_lambda():
     yield check_ast, 'lambda: 42'
@@ -471,14 +514,8 @@ def test_lambda_kwx():
 def test_lambda_x_y():
     yield check_ast, 'lambda x, y: x'
 
-def test_lambda_x_y():
-    yield check_ast, 'lambda x, y: x'
-
 def test_lambda_x_y_z():
     yield check_ast, 'lambda x, y, z: x'
-
-def test_lambda_x_y():
-    yield check_ast, 'lambda x, y: x'
 
 def test_lambda_x_kwy():
     yield check_ast, 'lambda x, y=42: x'
@@ -497,9 +534,6 @@ def test_lambda_x_y_comma():
 
 def test_lambda_x_y_z_comma():
     yield check_ast, 'lambda x, y, z,: x'
-
-def test_lambda_x_y_comma():
-    yield check_ast, 'lambda x, y,: x'
 
 def test_lambda_x_kwy_comma():
     yield check_ast, 'lambda x, y=42,: x'
@@ -609,20 +643,11 @@ def test_call_range_comma():
 def test_call_range_x_y():
     yield check_ast, 'range(6, 10)'
 
-def test_call_range_x_y():
-    yield check_ast, 'range(6, 10)'
-
-def test_call_range_x_y():
-    yield check_ast, 'range(6, 10)'
-
 def test_call_range_x_y_comma():
     yield check_ast, 'range(6, 10,)'
 
 def test_call_range_x_y_z():
     yield check_ast, 'range(6, 10, 2)'
-
-def test_call_range_x_y():
-    yield check_ast, 'range(6, 10)'
 
 def test_call_dict_kwx():
     yield check_ast, 'dict(start=10)'
@@ -647,9 +672,6 @@ def test_call_range_x_star():
 
 def test_call_int():
     yield check_ast, 'int(*["42"], base=8)'
-
-def test_call_int_base_dict():
-    yield check_ast, 'int(*["42"], **{"base": 8})'
 
 def test_call_int_base_dict():
     yield check_ast, 'int(*["42"], **{"base": 8})'
@@ -745,6 +767,9 @@ def test_equals():
 def test_equals_semi():
     yield check_stmts, 'x = 42;'
 
+def test_x_y_equals_semi():
+    yield check_stmts, 'x = y = 42'
+
 def test_equals_two():
     yield check_stmts, 'x = 42; y = 65'
 
@@ -793,6 +818,24 @@ def test_lshift_eq():
 def test_rshift_eq():
     yield check_stmts, 'x = 42; x >>= 2'
 
+def test_bare_unpack():
+    yield check_stmts, 'x, y = 42, 65'
+
+def test_lhand_group_unpack():
+    yield check_stmts, '(x, y) = 42, 65'
+
+def test_rhand_group_unpack():
+    yield check_stmts, 'x, y = (42, 65)'
+
+def test_grouped_unpack():
+    yield check_stmts, '(x, y) = (42, 65)'
+
+def test_double_grouped_unpack():
+    yield check_stmts, '(x, y) = (z, a) = (7, 8)'
+
+def test_double_ungrouped_unpack():
+    yield check_stmts, 'x, y = z, a = 7, 8'
+
 def test_stary_eq():
     yield check_stmts, '*y, = [1, 2, 3]'
 
@@ -822,9 +865,6 @@ def test_equals_attr():
 
 def test_dict_keys():
     yield check_stmts, 'x = {"x": 1}\nx.keys()'
-
-def test_assert():
-    yield check_stmts, 'assert True'
 
 def test_assert_msg():
     yield check_stmts, 'assert True, "wow mom"'
@@ -892,15 +932,9 @@ def test_from_import_x_y_z():
 def test_from_dot_import_x_y():
     yield check_stmts, 'from . import x, y', False
     
-def test_from_dot_import_x_y():
-    yield check_stmts, 'from . import x, y', False
-    
 def test_from_dot_import_x_y_z():
     yield check_stmts, 'from . import x, y, z', False
 
-def test_from_dot_import_x_y():
-    yield check_stmts, 'from . import x, y', False
-    
 def test_from_dot_import_group_x_y():
     yield check_stmts, 'from . import (x, y)', False
 
@@ -921,6 +955,9 @@ def test_import_x_as_y_z_as_a():
 
 def test_from_dot_import_x_as_y():
     yield check_stmts, 'from . import x as y', False
+
+def test_from_x_import_star():
+    yield check_stmts, 'from x import *', False
 
 def test_from_x_import_y_as_z():
     yield check_stmts, 'from x import y as z', False
@@ -1107,14 +1144,8 @@ def test_func_kwx():
 def test_func_x_y():
     yield check_stmts, 'def f(x, y):\n  return x'
 
-def test_func_x_y():
-    yield check_stmts, 'def f(x, y):\n  return x'
-
 def test_func_x_y_z():
     yield check_stmts, 'def f(x, y, z):\n  return x'
-
-def test_func_x_y():
-    yield check_stmts, 'def f(x, y):\n  return x'
 
 def test_func_x_kwy():
     yield check_stmts, 'def f(x, y=42):\n  return x'
@@ -1133,9 +1164,6 @@ def test_func_x_y_comma():
 
 def test_func_x_y_z_comma():
     yield check_stmts, 'def f(x, y, z,):\n  return x'
-
-def test_func_x_y_comma():
-    yield check_stmts, 'def f(x, y,):\n  return x'
 
 def test_func_x_kwy_comma():
     yield check_stmts, 'def f(x, y=42,):\n  return x'
@@ -1242,9 +1270,6 @@ def test_func_tx():
 def test_func_txy():
     yield check_stmts, 'def f(x:int, y:float=10.0):\n  return x'
 
-def test_func_tx():
-    yield check_stmts, 'def f(x:int):\n  return x'
-
 def test_class():
     yield check_stmts, 'class X:\n  pass'
 
@@ -1254,7 +1279,7 @@ def test_class_obj():
 def test_class_int_flt():
     yield check_stmts, 'class X(int, object):\n  pass'
 
-def test_class_obj():
+def test_class_obj_kw():
     # technically valid syntax, though it will fail to compile
     yield check_stmts, 'class X(object=5):\n  pass', False
 
@@ -1280,6 +1305,35 @@ def test_broken_prompt_func():
     code = ('def prompt():\n'
             "    return '{user}'.format(\n"
             "       user='me')\n")
+    yield check_stmts, code, False
+
+def test_class_with_methods():
+    code = ('class Test:\n'
+            '   def __init__(self):\n'
+            '       self.msg("hello world")\n'
+            '   def msg(self, m):\n'
+            '      print(m)\n')
+    yield check_stmts, code, False
+
+def test_nested_functions():
+    code = ('def test(x):\n'
+            '    def test2(y):\n'
+            '        return y+x\n'
+            '    return test2\n')
+    yield check_stmts, code, False
+
+def test_function_blank_line():
+    code = ('def foo():\n'
+            '    ascii_art = [\n'
+            '        "(╯°□°）╯︵ ┻━┻",\n'
+            '        "¯\\_(ツ)_/¯",\n'
+            '        "┻━┻︵ \\(°□°)/ ︵ ┻━┻",\n'
+            '    ]\n'
+            '\n'
+            '    import random\n'
+            '    i = random.randint(0,len(ascii_art)) - 1\n'
+            '    print("    Get to work!")\n'
+            '    print(ascii_art[i])\n')
     yield check_stmts, code, False
 
 
@@ -1317,12 +1371,6 @@ def test_dollar_py_set():
 def test_dollar_sub():
     yield check_xonsh_ast, {}, '$(ls)'
 
-def test_dollar_sub():
-    yield check_xonsh_ast, {}, '$(ls)'
-
-def test_dollar_sub():
-    yield check_xonsh_ast, {}, '$(ls)'
-
 def test_dollar_sub_space():
     yield check_xonsh_ast, {}, '$(ls )'
 
@@ -1330,10 +1378,10 @@ def test_ls_dot():
     yield check_xonsh_ast, {}, '$(ls .)'
 
 def test_ls_dot_nesting():
-    yield check_xonsh_ast, {}, '$(ls ${None or "."})'
+    yield check_xonsh_ast, {}, '$(ls @(None or "."))'
 
 def test_ls_dot_nesting_var():
-    yield check_xonsh, {}, 'x = "."; $(ls ${None or x})'
+    yield check_xonsh, {}, 'x = "."; $(ls @(None or x))'
 
 def test_ls_dot_str():
     yield check_xonsh_ast, {}, '$(ls ".")'

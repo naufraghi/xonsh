@@ -8,6 +8,7 @@ try:
     from setuptools import setup
     from setuptools.command.sdist import sdist
     from setuptools.command.install import install
+    from setuptools.command.develop import develop
     HAVE_SETUPTOOLS = True
 except ImportError:
     from distutils.core import setup
@@ -15,7 +16,7 @@ except ImportError:
     from distutils.command.install import install as install
     HAVE_SETUPTOOLS = False
 
-VERSION = '0.1.2'
+from xonsh import __version__ as XONSH_VERSION
 
 TABLES = ['xonsh/lexer_table.py', 'xonsh/parser_table.py']
 
@@ -45,24 +46,35 @@ class xsdist(sdist):
         build_tables()
         sdist.make_release_tree(self, basedir, files)
 
+if HAVE_SETUPTOOLS:
+    class xdevelop(develop):
+        def run(self):
+            clean_tables()
+            build_tables()
+            develop.run(self)
+
+
 def main():
     if sys.version_info[0] < 3:
         sys.exit('xonsh currently requires Python 3.4+')
-    print(logo)
-    with open('README.rst', 'r') as f:
+    try:
+        print(logo)
+    except UnicodeEncodeError:
+        pass
+    with open(os.path.join(os.path.dirname(__file__), 'README.rst'), 'r') as f:
         readme = f.read()
     skw = dict(
         name='xonsh',
         description='an exotic, usable shell',
         long_description=readme,
         license='BSD',
-        version=VERSION,
+        version=XONSH_VERSION,
         author='Anthony Scopatz',
         maintainer='Anthony Scopatz',
         author_email='scopatz@gmail.com',
         url='https://github.com/scopatz/xonsh',
         platforms='Cross Platform',
-        classifiers = ['Programming Language :: Python :: 3'],
+        classifiers=['Programming Language :: Python :: 3'],
         packages=['xonsh'],
         scripts=['scripts/xonsh'],
         cmdclass={'install': xinstall, 'sdist': xsdist},
@@ -70,6 +82,12 @@ def main():
     if HAVE_SETUPTOOLS:
         skw['setup_requires'] = ['ply']
         skw['install_requires'] = ['ply']
+        skw['entry_points'] = {
+            'pygments.lexers': ['xonsh = xonsh.pyghooks:XonshLexer',
+                                'xonshcon = xonsh.pyghooks:XonshConsoleLexer',
+                                ],
+            }
+        skw['cmdclass']['develop'] = xdevelop
     setup(**skw)
 
 logo = """
