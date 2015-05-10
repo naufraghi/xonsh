@@ -1,8 +1,10 @@
 """Directory stack and associated utilities for the xonsh shell.
 """
 import os
-import builtins
+from glob import iglob
 from argparse import ArgumentParser
+
+import builtins
 
 DIRSTACK = []
 """
@@ -64,6 +66,13 @@ def cd(args, stdin=None):
                     return '', e.format(len(DIRSTACK))
                 else:
                     d = DIRSTACK[num - 1]
+            else:
+                # try CDPATH
+                cdpaths = env.get('CDPATH', [])
+                for cdp in cdpaths:
+                    for p in iglob(os.path.join(cdp, d)):
+                        d = p
+                        break
     else:
         return '', 'cd takes 0 or 1 arguments, not {0}\n'.format(len(args))
     if not os.path.exists(d):
